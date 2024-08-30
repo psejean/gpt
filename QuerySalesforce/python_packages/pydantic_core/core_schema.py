@@ -6,18 +6,10 @@ validate and serialize.
 from __future__ import annotations as _annotations
 
 import sys
-import warnings
 from collections.abc import Mapping
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable, Dict, Hashable, List, Pattern, Set, Tuple, Type, Union
-
-from typing_extensions import deprecated
-
-if sys.version_info < (3, 12):
-    from typing_extensions import TypedDict
-else:
-    from typing import TypedDict
+from typing import TYPE_CHECKING, Any, Callable, Dict, Hashable, List, Set, Tuple, Type, Union
 
 if sys.version_info < (3, 11):
     from typing_extensions import Protocol, Required, TypeAlias
@@ -25,9 +17,9 @@ else:
     from typing import Protocol, Required, TypeAlias
 
 if sys.version_info < (3, 9):
-    from typing_extensions import Literal
+    from typing_extensions import Literal, TypedDict
 else:
-    from typing import Literal
+    from typing import Literal, TypedDict
 
 if TYPE_CHECKING:
     from pydantic_core import PydanticUndefined
@@ -68,15 +60,7 @@ class CoreConfig(TypedDict, total=False):
         allow_inf_nan: Whether to allow infinity and NaN values for float fields. Default is `True`.
         ser_json_timedelta: The serialization option for `timedelta` values. Default is 'iso8601'.
         ser_json_bytes: The serialization option for `bytes` values. Default is 'utf8'.
-        ser_json_inf_nan: The serialization option for infinity and NaN values
-            in float fields. Default is 'null'.
         hide_input_in_errors: Whether to hide input data from `ValidationError` representation.
-        validation_error_cause: Whether to add user-python excs to the __cause__ of a ValidationError.
-            Requires exceptiongroup backport pre Python 3.11.
-        coerce_numbers_to_str: Whether to enable coercion of any `Number` type to `str` (not applicable in `strict` mode).
-        regex_engine: The regex engine to use for regex pattern validation. Default is 'rust-regex'. See `StringSchema`.
-        cache_strings: Whether to cache strings. Default is `True`, `True` or `'all'` is required to cache strings
-            during general validation since validators don't know if they're in a key or a value.
     """
 
     title: str
@@ -105,14 +89,9 @@ class CoreConfig(TypedDict, total=False):
     allow_inf_nan: bool  # default: True
     # the config options are used to customise serialization to JSON
     ser_json_timedelta: Literal['iso8601', 'float']  # default: 'iso8601'
-    ser_json_bytes: Literal['utf8', 'base64', 'hex']  # default: 'utf8'
-    ser_json_inf_nan: Literal['null', 'constants', 'strings']  # default: 'null'
+    ser_json_bytes: Literal['utf8', 'base64']  # default: 'utf8'
     # used to hide input data from ValidationError repr
     hide_input_in_errors: bool
-    validation_error_cause: bool  # default: False
-    coerce_numbers_to_str: bool  # default: False
-    regex_engine: Literal['rust-regex', 'python-re']  # default: 'rust-regex'
-    cache_strings: Union[bool, Literal['all', 'keys', 'none']]  # default: 'True'
 
 
 IncExCall: TypeAlias = 'set[int | str] | dict[int | str, IncExCall] | None'
@@ -120,45 +99,51 @@ IncExCall: TypeAlias = 'set[int | str] | dict[int | str, IncExCall] | None'
 
 class SerializationInfo(Protocol):
     @property
-    def include(self) -> IncExCall: ...
+    def include(self) -> IncExCall:
+        ...
 
     @property
-    def exclude(self) -> IncExCall: ...
+    def exclude(self) -> IncExCall:
+        ...
 
     @property
-    def context(self) -> Any | None:
-        """Current serialization context."""
+    def mode(self) -> str:
+        ...
 
     @property
-    def mode(self) -> str: ...
+    def by_alias(self) -> bool:
+        ...
 
     @property
-    def by_alias(self) -> bool: ...
+    def exclude_unset(self) -> bool:
+        ...
 
     @property
-    def exclude_unset(self) -> bool: ...
+    def exclude_defaults(self) -> bool:
+        ...
 
     @property
-    def exclude_defaults(self) -> bool: ...
+    def exclude_none(self) -> bool:
+        ...
 
     @property
-    def exclude_none(self) -> bool: ...
+    def round_trip(self) -> bool:
+        ...
 
-    @property
-    def serialize_as_any(self) -> bool: ...
+    def mode_is_json(self) -> bool:
+        ...
 
-    def round_trip(self) -> bool: ...
+    def __str__(self) -> str:
+        ...
 
-    def mode_is_json(self) -> bool: ...
-
-    def __str__(self) -> str: ...
-
-    def __repr__(self) -> str: ...
+    def __repr__(self) -> str:
+        ...
 
 
 class FieldSerializationInfo(SerializationInfo, Protocol):
     @property
-    def field_name(self) -> str: ...
+    def field_name(self) -> str:
+        ...
 
 
 class ValidationInfo(Protocol):
@@ -181,13 +166,19 @@ class ValidationInfo(Protocol):
         """The type of input data we are currently validating"""
         ...
 
+
+class FieldValidationInfo(ValidationInfo, Protocol):
+    """
+    Argument passed to model field validation functions.
+    """
+
     @property
     def data(self) -> Dict[str, Any]:
-        """The data being validated for this model."""
+        """All of the fields and data being validated for this model."""
         ...
 
     @property
-    def field_name(self) -> str | None:
+    def field_name(self) -> str:
         """
         The name of the current field being validated if this validator is
         attached to a model field.
@@ -234,13 +225,13 @@ def simple_ser_schema(type: ExpectedSerializationTypes) -> SimpleSerSchema:
     return SimpleSerSchema(type=type)
 
 
-# (input_value: Any, /) -> Any
+# (__input_value: Any) -> Any
 GeneralPlainNoInfoSerializerFunction = Callable[[Any], Any]
-# (input_value: Any, info: FieldSerializationInfo, /) -> Any
+# (__input_value: Any, __info: FieldSerializationInfo) -> Any
 GeneralPlainInfoSerializerFunction = Callable[[Any, SerializationInfo], Any]
-# (model: Any, input_value: Any, /) -> Any
+# (__model: Any, __input_value: Any) -> Any
 FieldPlainNoInfoSerializerFunction = Callable[[Any, Any], Any]
-# (model: Any, input_value: Any, info: FieldSerializationInfo, /) -> Any
+# (__model: Any, __input_value: Any, __info: FieldSerializationInfo) -> Any
 FieldPlainInfoSerializerFunction = Callable[[Any, Any, FieldSerializationInfo], Any]
 SerializerFunction = Union[
     GeneralPlainNoInfoSerializerFunction,
@@ -284,7 +275,7 @@ def plain_serializer_function_ser_schema(
         function: The function to use for serialization
         is_field_serializer: Whether the serializer is for a field, e.g. takes `model` as the first argument,
             and `info` includes `field_name`
-        info_arg: Whether the function takes an `info` argument
+        info_arg: Whether the function takes an `__info` argument
         return_schema: Schema to use for serializing return value
         when_used: When the function should be called
     """
@@ -302,16 +293,17 @@ def plain_serializer_function_ser_schema(
 
 
 class SerializerFunctionWrapHandler(Protocol):  # pragma: no cover
-    def __call__(self, input_value: Any, index_key: int | str | None = None, /) -> Any: ...
+    def __call__(self, __input_value: Any, __index_key: int | str | None = None) -> Any:
+        ...
 
 
-# (input_value: Any, serializer: SerializerFunctionWrapHandler, /) -> Any
+# (__input_value: Any, __serializer: SerializerFunctionWrapHandler) -> Any
 GeneralWrapNoInfoSerializerFunction = Callable[[Any, SerializerFunctionWrapHandler], Any]
-# (input_value: Any, serializer: SerializerFunctionWrapHandler, info: SerializationInfo, /) -> Any
+# (__input_value: Any, __serializer: SerializerFunctionWrapHandler, __info: SerializationInfo) -> Any
 GeneralWrapInfoSerializerFunction = Callable[[Any, SerializerFunctionWrapHandler, SerializationInfo], Any]
-# (model: Any, input_value: Any, serializer: SerializerFunctionWrapHandler, /) -> Any
+# (__model: Any, __input_value: Any, __serializer: SerializerFunctionWrapHandler) -> Any
 FieldWrapNoInfoSerializerFunction = Callable[[Any, Any, SerializerFunctionWrapHandler], Any]
-# (model: Any, input_value: Any, serializer: SerializerFunctionWrapHandler, info: FieldSerializationInfo, /) -> Any
+# (__model: Any, __input_value: Any, __serializer: SerializerFunctionWrapHandler, __info: FieldSerializationInfo) -> Any
 FieldWrapInfoSerializerFunction = Callable[[Any, Any, SerializerFunctionWrapHandler, FieldSerializationInfo], Any]
 WrapSerializerFunction = Union[
     GeneralWrapNoInfoSerializerFunction,
@@ -347,7 +339,7 @@ def wrap_serializer_function_ser_schema(
         function: The function to use for serialization
         is_field_serializer: Whether the serializer is for a field, e.g. takes `model` as the first argument,
             and `info` includes `field_name`
-        info_arg: Whether the function takes an `info` argument
+        info_arg: Whether the function takes an `__info` argument
         schema: The schema to use for the inner serialization
         return_schema: Schema to use for serializing return value
         when_used: When the function should be called
@@ -744,15 +736,13 @@ def decimal_schema(
 
 class StringSchema(TypedDict, total=False):
     type: Required[Literal['str']]
-    pattern: Union[str, Pattern[str]]
+    pattern: str
     max_length: int
     min_length: int
     strip_whitespace: bool
     to_lower: bool
     to_upper: bool
-    regex_engine: Literal['rust-regex', 'python-re']  # default: 'rust-regex'
     strict: bool
-    coerce_numbers_to_str: bool
     ref: str
     metadata: Any
     serialization: SerSchema
@@ -760,15 +750,13 @@ class StringSchema(TypedDict, total=False):
 
 def str_schema(
     *,
-    pattern: str | Pattern[str] | None = None,
+    pattern: str | None = None,
     max_length: int | None = None,
     min_length: int | None = None,
     strip_whitespace: bool | None = None,
     to_lower: bool | None = None,
     to_upper: bool | None = None,
-    regex_engine: Literal['rust-regex', 'python-re'] | None = None,
     strict: bool | None = None,
-    coerce_numbers_to_str: bool | None = None,
     ref: str | None = None,
     metadata: Any = None,
     serialization: SerSchema | None = None,
@@ -791,14 +779,7 @@ def str_schema(
         strip_whitespace: Whether to strip whitespace from the value
         to_lower: Whether to convert the value to lowercase
         to_upper: Whether to convert the value to uppercase
-        regex_engine: The regex engine to use for pattern validation. Default is 'rust-regex'.
-            - `rust-regex` uses the [`regex`](https://docs.rs/regex) Rust
-              crate, which is non-backtracking and therefore more DDoS
-              resistant, but does not support all regex features.
-            - `python-re` use the [`re`](https://docs.python.org/3/library/re.html) module,
-              which supports all regex features, but may be slower.
         strict: Whether the value should be a string or a value that can be converted to a string
-        coerce_numbers_to_str: Whether to enable coercion of any `Number` type to `str` (not applicable in `strict` mode).
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         serialization: Custom serialization schema
@@ -811,9 +792,7 @@ def str_schema(
         strip_whitespace=strip_whitespace,
         to_lower=to_lower,
         to_upper=to_upper,
-        regex_engine=regex_engine,
         strict=strict,
-        coerce_numbers_to_str=coerce_numbers_to_str,
         ref=ref,
         metadata=metadata,
         serialization=serialization,
@@ -1174,69 +1153,6 @@ def literal_schema(
     return _dict_not_none(type='literal', expected=expected, ref=ref, metadata=metadata, serialization=serialization)
 
 
-class EnumSchema(TypedDict, total=False):
-    type: Required[Literal['enum']]
-    cls: Required[Any]
-    members: Required[List[Any]]
-    sub_type: Literal['str', 'int', 'float']
-    missing: Callable[[Any], Any]
-    strict: bool
-    ref: str
-    metadata: Any
-    serialization: SerSchema
-
-
-def enum_schema(
-    cls: Any,
-    members: list[Any],
-    *,
-    sub_type: Literal['str', 'int', 'float'] | None = None,
-    missing: Callable[[Any], Any] | None = None,
-    strict: bool | None = None,
-    ref: str | None = None,
-    metadata: Any = None,
-    serialization: SerSchema | None = None,
-) -> EnumSchema:
-    """
-    Returns a schema that matches an enum value, e.g.:
-
-    ```py
-    from enum import Enum
-    from pydantic_core import SchemaValidator, core_schema
-
-    class Color(Enum):
-        RED = 1
-        GREEN = 2
-        BLUE = 3
-
-    schema = core_schema.enum_schema(Color, list(Color.__members__.values()))
-    v = SchemaValidator(schema)
-    assert v.validate_python(2) is Color.GREEN
-    ```
-
-    Args:
-        cls: The enum class
-        members: The members of the enum, generally `list(MyEnum.__members__.values())`
-        sub_type: The type of the enum, either 'str' or 'int' or None for plain enums
-        missing: A function to use when the value is not found in the enum, from `_missing_`
-        strict: Whether to use strict mode, defaults to False
-        ref: optional unique identifier of the schema, used to reference the schema in other places
-        metadata: Any other information you want to include with the schema, not used by pydantic-core
-        serialization: Custom serialization schema
-    """
-    return _dict_not_none(
-        type='enum',
-        cls=cls,
-        members=members,
-        sub_type=sub_type,
-        missing=missing,
-        strict=strict,
-        ref=ref,
-        metadata=metadata,
-        serialization=serialization,
-    )
-
-
 # must match input/parse_json.rs::JsonType::try_from
 JsonType = Literal['null', 'bool', 'int', 'float', 'str', 'list', 'dict']
 
@@ -1259,7 +1175,7 @@ def is_instance_schema(
     serialization: SerSchema | None = None,
 ) -> IsInstanceSchema:
     """
-    Returns a schema that checks if a value is an instance of a class, equivalent to python's `isinstance` method, e.g.:
+    Returns a schema that checks if a value is an instance of a class, equivalent to python's `isinstnace` method, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
@@ -1399,7 +1315,6 @@ class ListSchema(TypedDict, total=False):
     items_schema: CoreSchema
     min_length: int
     max_length: int
-    fail_fast: bool
     strict: bool
     ref: str
     metadata: Any
@@ -1411,7 +1326,6 @@ def list_schema(
     *,
     min_length: int | None = None,
     max_length: int | None = None,
-    fail_fast: bool | None = None,
     strict: bool | None = None,
     ref: str | None = None,
     metadata: Any = None,
@@ -1432,7 +1346,6 @@ def list_schema(
         items_schema: The value must be a list of items that match this schema
         min_length: The value must be a list with at least this many items
         max_length: The value must be a list with at most this many items
-        fail_fast: Stop validation on the first error
         strict: The value must be a list with exactly this many items
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
@@ -1443,7 +1356,6 @@ def list_schema(
         items_schema=items_schema,
         min_length=min_length,
         max_length=max_length,
-        fail_fast=fail_fast,
         strict=strict,
         ref=ref,
         metadata=metadata,
@@ -1451,16 +1363,25 @@ def list_schema(
     )
 
 
-# @deprecated('tuple_positional_schema is deprecated. Use pydantic_core.core_schema.tuple_schema instead.')
+class TuplePositionalSchema(TypedDict, total=False):
+    type: Required[Literal['tuple-positional']]
+    items_schema: Required[List[CoreSchema]]
+    extra_schema: CoreSchema
+    strict: bool
+    ref: str
+    metadata: Any
+    serialization: IncExSeqOrElseSerSchema
+
+
 def tuple_positional_schema(
     items_schema: list[CoreSchema],
     *,
-    extras_schema: CoreSchema | None = None,
+    extra_schema: CoreSchema | None = None,
     strict: bool | None = None,
     ref: str | None = None,
     metadata: Any = None,
     serialization: IncExSeqOrElseSerSchema | None = None,
-) -> TupleSchema:
+) -> TuplePositionalSchema:
     """
     Returns a schema that matches a tuple of schemas, e.g.:
 
@@ -1476,7 +1397,7 @@ def tuple_positional_schema(
 
     Args:
         items_schema: The value must be a tuple with items that match these schemas
-        extras_schema: The value must be a tuple with items that match this schema
+        extra_schema: The value must be a tuple with items that match this schema
             This was inspired by JSON schema's `prefixItems` and `items` fields.
             In python's `typing.Tuple`, you can't specify a type for "extra" items -- they must all be the same type
             if the length is variable. So this field won't be set from a `typing.Tuple` annotation on a pydantic model.
@@ -1485,14 +1406,10 @@ def tuple_positional_schema(
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         serialization: Custom serialization schema
     """
-    if extras_schema is not None:
-        variadic_item_index = len(items_schema)
-        items_schema = items_schema + [extras_schema]
-    else:
-        variadic_item_index = None
-    return tuple_schema(
+    return _dict_not_none(
+        type='tuple-positional',
         items_schema=items_schema,
-        variadic_item_index=variadic_item_index,
+        extra_schema=extra_schema,
         strict=strict,
         ref=ref,
         metadata=metadata,
@@ -1500,7 +1417,17 @@ def tuple_positional_schema(
     )
 
 
-# @deprecated('tuple_variable_schema is deprecated. Use pydantic_core.core_schema.tuple_schema instead.')
+class TupleVariableSchema(TypedDict, total=False):
+    type: Required[Literal['tuple-variable']]
+    items_schema: CoreSchema
+    min_length: int
+    max_length: int
+    strict: bool
+    ref: str
+    metadata: Any
+    serialization: IncExSeqOrElseSerSchema
+
+
 def tuple_variable_schema(
     items_schema: CoreSchema | None = None,
     *,
@@ -1510,7 +1437,7 @@ def tuple_variable_schema(
     ref: str | None = None,
     metadata: Any = None,
     serialization: IncExSeqOrElseSerSchema | None = None,
-) -> TupleSchema:
+) -> TupleVariableSchema:
     """
     Returns a schema that matches a tuple of a given schema, e.g.:
 
@@ -1529,79 +1456,15 @@ def tuple_variable_schema(
         min_length: The value must be a tuple with at least this many items
         max_length: The value must be a tuple with at most this many items
         strict: The value must be a tuple with exactly this many items
-        ref: Optional unique identifier of the schema, used to reference the schema in other places
-        metadata: Any other information you want to include with the schema, not used by pydantic-core
-        serialization: Custom serialization schema
-    """
-    return tuple_schema(
-        items_schema=[items_schema or any_schema()],
-        variadic_item_index=0,
-        min_length=min_length,
-        max_length=max_length,
-        strict=strict,
-        ref=ref,
-        metadata=metadata,
-        serialization=serialization,
-    )
-
-
-class TupleSchema(TypedDict, total=False):
-    type: Required[Literal['tuple']]
-    items_schema: Required[List[CoreSchema]]
-    variadic_item_index: int
-    min_length: int
-    max_length: int
-    fail_fast: bool
-    strict: bool
-    ref: str
-    metadata: Any
-    serialization: IncExSeqOrElseSerSchema
-
-
-def tuple_schema(
-    items_schema: list[CoreSchema],
-    *,
-    variadic_item_index: int | None = None,
-    min_length: int | None = None,
-    max_length: int | None = None,
-    fail_fast: bool | None = None,
-    strict: bool | None = None,
-    ref: str | None = None,
-    metadata: Any = None,
-    serialization: IncExSeqOrElseSerSchema | None = None,
-) -> TupleSchema:
-    """
-    Returns a schema that matches a tuple of schemas, with an optional variadic item, e.g.:
-
-    ```py
-    from pydantic_core import SchemaValidator, core_schema
-
-    schema = core_schema.tuple_schema(
-        [core_schema.int_schema(), core_schema.str_schema(), core_schema.float_schema()],
-        variadic_item_index=1,
-    )
-    v = SchemaValidator(schema)
-    assert v.validate_python((1, 'hello', 'world', 1.5)) == (1, 'hello', 'world', 1.5)
-    ```
-
-    Args:
-        items_schema: The value must be a tuple with items that match these schemas
-        variadic_item_index: The index of the schema in `items_schema` to be treated as variadic (following PEP 646)
-        min_length: The value must be a tuple with at least this many items
-        max_length: The value must be a tuple with at most this many items
-        fail_fast: Stop validation on the first error
-        strict: The value must be a tuple with exactly this many items
-        ref: Optional unique identifier of the schema, used to reference the schema in other places
+        ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         serialization: Custom serialization schema
     """
     return _dict_not_none(
-        type='tuple',
+        type='tuple-variable',
         items_schema=items_schema,
-        variadic_item_index=variadic_item_index,
         min_length=min_length,
         max_length=max_length,
-        fail_fast=fail_fast,
         strict=strict,
         ref=ref,
         metadata=metadata,
@@ -1614,7 +1477,6 @@ class SetSchema(TypedDict, total=False):
     items_schema: CoreSchema
     min_length: int
     max_length: int
-    fail_fast: bool
     strict: bool
     ref: str
     metadata: Any
@@ -1626,7 +1488,6 @@ def set_schema(
     *,
     min_length: int | None = None,
     max_length: int | None = None,
-    fail_fast: bool | None = None,
     strict: bool | None = None,
     ref: str | None = None,
     metadata: Any = None,
@@ -1649,7 +1510,6 @@ def set_schema(
         items_schema: The value must be a set with items that match this schema
         min_length: The value must be a set with at least this many items
         max_length: The value must be a set with at most this many items
-        fail_fast: Stop validation on the first error
         strict: The value must be a set with exactly this many items
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
@@ -1660,7 +1520,6 @@ def set_schema(
         items_schema=items_schema,
         min_length=min_length,
         max_length=max_length,
-        fail_fast=fail_fast,
         strict=strict,
         ref=ref,
         metadata=metadata,
@@ -1673,7 +1532,6 @@ class FrozenSetSchema(TypedDict, total=False):
     items_schema: CoreSchema
     min_length: int
     max_length: int
-    fail_fast: bool
     strict: bool
     ref: str
     metadata: Any
@@ -1685,7 +1543,6 @@ def frozenset_schema(
     *,
     min_length: int | None = None,
     max_length: int | None = None,
-    fail_fast: bool | None = None,
     strict: bool | None = None,
     ref: str | None = None,
     metadata: Any = None,
@@ -1708,7 +1565,6 @@ def frozenset_schema(
         items_schema: The value must be a frozenset with items that match this schema
         min_length: The value must be a frozenset with at least this many items
         max_length: The value must be a frozenset with at most this many items
-        fail_fast: Stop validation on the first error
         strict: The value must be a frozenset with exactly this many items
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
@@ -1719,7 +1575,6 @@ def frozenset_schema(
         items_schema=items_schema,
         min_length=min_length,
         max_length=max_length,
-        fail_fast=fail_fast,
         strict=strict,
         ref=ref,
         metadata=metadata,
@@ -1859,7 +1714,7 @@ def dict_schema(
     )
 
 
-# (input_value: Any, /) -> Any
+# (__input_value: Any) -> Any
 NoInfoValidatorFunction = Callable[[Any], Any]
 
 
@@ -1868,17 +1723,26 @@ class NoInfoValidatorFunctionSchema(TypedDict):
     function: NoInfoValidatorFunction
 
 
-# (input_value: Any, info: ValidationInfo, /) -> Any
-WithInfoValidatorFunction = Callable[[Any, ValidationInfo], Any]
+# (__input_value: Any, __info: ValidationInfo) -> Any
+GeneralValidatorFunction = Callable[[Any, ValidationInfo], Any]
 
 
-class WithInfoValidatorFunctionSchema(TypedDict, total=False):
-    type: Required[Literal['with-info']]
-    function: Required[WithInfoValidatorFunction]
+class GeneralValidatorFunctionSchema(TypedDict):
+    type: Literal['general']
+    function: GeneralValidatorFunction
+
+
+# (__input_value: Any, __info: FieldValidationInfo) -> Any
+FieldValidatorFunction = Callable[[Any, FieldValidationInfo], Any]
+
+
+class FieldValidatorFunctionSchema(TypedDict):
+    type: Literal['field']
+    function: FieldValidatorFunction
     field_name: str
 
 
-ValidationFunction = Union[NoInfoValidatorFunctionSchema, WithInfoValidatorFunctionSchema]
+ValidationFunction = Union[NoInfoValidatorFunctionSchema, FieldValidatorFunctionSchema, GeneralValidatorFunctionSchema]
 
 
 class _ValidatorFunctionSchema(TypedDict, total=False):
@@ -1902,7 +1766,7 @@ def no_info_before_validator_function(
     serialization: SerSchema | None = None,
 ) -> BeforeValidatorFunctionSchema:
     """
-    Returns a schema that calls a validator function before validating, no `info` argument is provided, e.g.:
+    Returns a schema that calls a validator function before validating, no info is provided, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
@@ -1936,29 +1800,29 @@ def no_info_before_validator_function(
     )
 
 
-def with_info_before_validator_function(
-    function: WithInfoValidatorFunction,
+def field_before_validator_function(
+    function: FieldValidatorFunction,
+    field_name: str,
     schema: CoreSchema,
     *,
-    field_name: str | None = None,
     ref: str | None = None,
     metadata: Any = None,
     serialization: SerSchema | None = None,
 ) -> BeforeValidatorFunctionSchema:
     """
-    Returns a schema that calls a validator function before validation, the function is called with
-    an `info` argument, e.g.:
+    Returns a schema that calls a validator function before validating the function is called with information
+    about the field being validated, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
 
-    def fn(v: bytes, info: core_schema.ValidationInfo) -> str:
+    def fn(v: bytes, info: core_schema.FieldValidationInfo) -> str:
         assert info.data is not None
         assert info.field_name is not None
         return v.decode() + 'world'
 
-    func_schema = core_schema.with_info_before_validator_function(
-        function=fn, schema=core_schema.str_schema(), field_name='a'
+    func_schema = core_schema.field_before_validator_function(
+        function=fn, field_name='a', schema=core_schema.str_schema()
     )
     schema = core_schema.typed_dict_schema({'a': core_schema.typed_dict_field(func_schema)})
 
@@ -1976,7 +1840,51 @@ def with_info_before_validator_function(
     """
     return _dict_not_none(
         type='function-before',
-        function=_dict_not_none(type='with-info', function=function, field_name=field_name),
+        function={'type': 'field', 'function': function, 'field_name': field_name},
+        schema=schema,
+        ref=ref,
+        metadata=metadata,
+        serialization=serialization,
+    )
+
+
+def general_before_validator_function(
+    function: GeneralValidatorFunction,
+    schema: CoreSchema,
+    *,
+    ref: str | None = None,
+    metadata: Any = None,
+    serialization: SerSchema | None = None,
+) -> BeforeValidatorFunctionSchema:
+    """
+    Returns a schema that calls a validator function before validating the provided schema, e.g.:
+
+    ```py
+    from typing import Any
+    from pydantic_core import SchemaValidator, core_schema
+
+    def fn(v: Any, info: core_schema.ValidationInfo) -> str:
+        v_str = str(v)
+        assert 'hello' in v_str
+        return v_str + 'world'
+
+    schema = core_schema.general_before_validator_function(
+        function=fn, schema=core_schema.str_schema()
+    )
+    v = SchemaValidator(schema)
+    assert v.validate_python(b'hello ') == "b'hello 'world"
+    ```
+
+    Args:
+        function: The validator function to call
+        schema: The schema to validate the output of the validator function
+        ref: optional unique identifier of the schema, used to reference the schema in other places
+        metadata: Any other information you want to include with the schema, not used by pydantic-core
+        serialization: Custom serialization schema
+    """
+    return _dict_not_none(
+        type='function-before',
+        function={'type': 'general', 'function': function},
         schema=schema,
         ref=ref,
         metadata=metadata,
@@ -1997,7 +1905,7 @@ def no_info_after_validator_function(
     serialization: SerSchema | None = None,
 ) -> AfterValidatorFunctionSchema:
     """
-    Returns a schema that calls a validator function after validating, no `info` argument is provided, e.g.:
+    Returns a schema that calls a validator function after validating, no info is provided, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
@@ -2029,29 +1937,29 @@ def no_info_after_validator_function(
     )
 
 
-def with_info_after_validator_function(
-    function: WithInfoValidatorFunction,
+def field_after_validator_function(
+    function: FieldValidatorFunction,
+    field_name: str,
     schema: CoreSchema,
     *,
-    field_name: str | None = None,
     ref: str | None = None,
     metadata: Any = None,
     serialization: SerSchema | None = None,
 ) -> AfterValidatorFunctionSchema:
     """
-    Returns a schema that calls a validator function after validation, the function is called with
-    an `info` argument, e.g.:
+    Returns a schema that calls a validator function after validating the function is called with information
+    about the field being validated, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
 
-    def fn(v: str, info: core_schema.ValidationInfo) -> str:
+    def fn(v: str, info: core_schema.FieldValidationInfo) -> str:
         assert info.data is not None
         assert info.field_name is not None
         return v + 'world'
 
-    func_schema = core_schema.with_info_after_validator_function(
-        function=fn, schema=core_schema.str_schema(), field_name='a'
+    func_schema = core_schema.field_after_validator_function(
+        function=fn, field_name='a', schema=core_schema.str_schema()
     )
     schema = core_schema.typed_dict_schema({'a': core_schema.typed_dict_field(func_schema)})
 
@@ -2061,15 +1969,57 @@ def with_info_after_validator_function(
 
     Args:
         function: The validator function to call after the schema is validated
+        field_name: The name of the field
         schema: The schema to validate before the validator function
-        field_name: The name of the field this validators is applied to, if any
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         serialization: Custom serialization schema
     """
     return _dict_not_none(
         type='function-after',
-        function=_dict_not_none(type='with-info', function=function, field_name=field_name),
+        function={'type': 'field', 'function': function, 'field_name': field_name},
+        schema=schema,
+        ref=ref,
+        metadata=metadata,
+        serialization=serialization,
+    )
+
+
+def general_after_validator_function(
+    function: GeneralValidatorFunction,
+    schema: CoreSchema,
+    *,
+    ref: str | None = None,
+    metadata: Any = None,
+    serialization: SerSchema | None = None,
+) -> AfterValidatorFunctionSchema:
+    """
+    Returns a schema that calls a validator function after validating the provided schema, e.g.:
+
+    ```py
+    from pydantic_core import SchemaValidator, core_schema
+
+    def fn(v: str, info: core_schema.ValidationInfo) -> str:
+        assert 'hello' in v
+        return v + 'world'
+
+    schema = core_schema.general_after_validator_function(
+        schema=core_schema.str_schema(), function=fn
+    )
+    v = SchemaValidator(schema)
+    assert v.validate_python('hello ') == 'hello world'
+    ```
+
+    Args:
+        schema: The schema to validate before the validator function
+        function: The validator function to call after the schema is validated
+        ref: optional unique identifier of the schema, used to reference the schema in other places
+        metadata: Any other information you want to include with the schema, not used by pydantic-core
+        serialization: Custom serialization schema
+    """
+    return _dict_not_none(
+        type='function-after',
+        function={'type': 'general', 'function': function},
         schema=schema,
         ref=ref,
         metadata=metadata,
@@ -2078,11 +2028,11 @@ def with_info_after_validator_function(
 
 
 class ValidatorFunctionWrapHandler(Protocol):
-    def __call__(self, input_value: Any, outer_location: str | int | None = None, /) -> Any:  # pragma: no cover
+    def __call__(self, input_value: Any, outer_location: str | int | None = None) -> Any:  # pragma: no cover
         ...
 
 
-# (input_value: Any, validator: ValidatorFunctionWrapHandler, /) -> Any
+# (__input_value: Any, __validator: ValidatorFunctionWrapHandler) -> Any
 NoInfoWrapValidatorFunction = Callable[[Any, ValidatorFunctionWrapHandler], Any]
 
 
@@ -2091,17 +2041,28 @@ class NoInfoWrapValidatorFunctionSchema(TypedDict):
     function: NoInfoWrapValidatorFunction
 
 
-# (input_value: Any, validator: ValidatorFunctionWrapHandler, info: ValidationInfo, /) -> Any
-WithInfoWrapValidatorFunction = Callable[[Any, ValidatorFunctionWrapHandler, ValidationInfo], Any]
+# (__input_value: Any, __validator: ValidatorFunctionWrapHandler, __info: ValidationInfo) -> Any
+GeneralWrapValidatorFunction = Callable[[Any, ValidatorFunctionWrapHandler, ValidationInfo], Any]
 
 
-class WithInfoWrapValidatorFunctionSchema(TypedDict, total=False):
-    type: Required[Literal['with-info']]
-    function: Required[WithInfoWrapValidatorFunction]
+class GeneralWrapValidatorFunctionSchema(TypedDict):
+    type: Literal['general']
+    function: GeneralWrapValidatorFunction
+
+
+# (__input_value: Any, __validator: ValidatorFunctionWrapHandler, __info: FieldValidationInfo) -> Any
+FieldWrapValidatorFunction = Callable[[Any, ValidatorFunctionWrapHandler, FieldValidationInfo], Any]
+
+
+class FieldWrapValidatorFunctionSchema(TypedDict):
+    type: Literal['field']
+    function: FieldWrapValidatorFunction
     field_name: str
 
 
-WrapValidatorFunction = Union[NoInfoWrapValidatorFunctionSchema, WithInfoWrapValidatorFunctionSchema]
+WrapValidatorFunction = Union[
+    NoInfoWrapValidatorFunctionSchema, GeneralWrapValidatorFunctionSchema, FieldWrapValidatorFunctionSchema
+]
 
 
 class WrapValidatorFunctionSchema(TypedDict, total=False):
@@ -2124,7 +2085,7 @@ def no_info_wrap_validator_function(
     """
     Returns a schema which calls a function with a `validator` callable argument which can
     optionally be used to call inner validation with the function logic, this is much like the
-    "onion" implementation of middleware in many popular web frameworks, no `info` argument is passed, e.g.:
+    "onion" implementation of middleware in many popular web frameworks, no info argument is passed, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
@@ -2159,11 +2120,10 @@ def no_info_wrap_validator_function(
     )
 
 
-def with_info_wrap_validator_function(
-    function: WithInfoWrapValidatorFunction,
+def general_wrap_validator_function(
+    function: GeneralWrapValidatorFunction,
     schema: CoreSchema,
     *,
-    field_name: str | None = None,
     ref: str | None = None,
     metadata: Any = None,
     serialization: SerSchema | None = None,
@@ -2171,7 +2131,7 @@ def with_info_wrap_validator_function(
     """
     Returns a schema which calls a function with a `validator` callable argument which can
     optionally be used to call inner validation with the function logic, this is much like the
-    "onion" implementation of middleware in many popular web frameworks, an `info` argument is also passed, e.g.:
+    "onion" implementation of middleware in many popular web frameworks, general info is also passed, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
@@ -2183,7 +2143,7 @@ def with_info_wrap_validator_function(
     ) -> str:
         return validator(input_value=v) + 'world'
 
-    schema = core_schema.with_info_wrap_validator_function(
+    schema = core_schema.general_wrap_validator_function(
         function=fn, schema=core_schema.str_schema()
     )
     v = SchemaValidator(schema)
@@ -2193,14 +2153,67 @@ def with_info_wrap_validator_function(
     Args:
         function: The validator function to call
         schema: The schema to validate the output of the validator function
-        field_name: The name of the field this validators is applied to, if any
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         serialization: Custom serialization schema
     """
     return _dict_not_none(
         type='function-wrap',
-        function=_dict_not_none(type='with-info', function=function, field_name=field_name),
+        function={'type': 'general', 'function': function},
+        schema=schema,
+        ref=ref,
+        metadata=metadata,
+        serialization=serialization,
+    )
+
+
+def field_wrap_validator_function(
+    function: FieldWrapValidatorFunction,
+    field_name: str,
+    schema: CoreSchema,
+    *,
+    ref: str | None = None,
+    metadata: Any = None,
+    serialization: SerSchema | None = None,
+) -> WrapValidatorFunctionSchema:
+    """
+    Returns a schema applicable to **fields**
+    which calls a function with a `validator` callable argument which can
+    optionally be used to call inner validation with the function logic, this is much like the
+    "onion" implementation of middleware in many popular web frameworks, field info is passed, e.g.:
+
+    ```py
+    from pydantic_core import SchemaValidator, core_schema
+
+    def fn(
+        v: bytes,
+        validator: core_schema.ValidatorFunctionWrapHandler,
+        info: core_schema.FieldValidationInfo,
+    ) -> str:
+        assert info.data is not None
+        assert info.field_name is not None
+        return validator(v) + 'world'
+
+    func_schema = core_schema.field_wrap_validator_function(
+        function=fn, field_name='a', schema=core_schema.str_schema()
+    )
+    schema = core_schema.typed_dict_schema({'a': core_schema.typed_dict_field(func_schema)})
+
+    v = SchemaValidator(schema)
+    assert v.validate_python({'a': b'hello '}) == {'a': 'hello world'}
+    ```
+
+    Args:
+        function: The validator function to call
+        field_name: The name of the field
+        schema: The schema to validate the output of the validator function
+        ref: optional unique identifier of the schema, used to reference the schema in other places
+        metadata: Any other information you want to include with the schema, not used by pydantic-core
+        serialization: Custom serialization schema
+    """
+    return _dict_not_none(
+        type='function-wrap',
+        function={'type': 'field', 'function': function, 'field_name': field_name},
         schema=schema,
         ref=ref,
         metadata=metadata,
@@ -2224,7 +2237,7 @@ def no_info_plain_validator_function(
     serialization: SerSchema | None = None,
 ) -> PlainValidatorFunctionSchema:
     """
-    Returns a schema that uses the provided function for validation, no `info` argument is passed, e.g.:
+    Returns a schema that uses the provided function for validation, no info is passed, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
@@ -2253,16 +2266,15 @@ def no_info_plain_validator_function(
     )
 
 
-def with_info_plain_validator_function(
-    function: WithInfoValidatorFunction,
+def general_plain_validator_function(
+    function: GeneralValidatorFunction,
     *,
-    field_name: str | None = None,
     ref: str | None = None,
     metadata: Any = None,
     serialization: SerSchema | None = None,
 ) -> PlainValidatorFunctionSchema:
     """
-    Returns a schema that uses the provided function for validation, an `info` argument is passed, e.g.:
+    Returns a schema that uses the provided function for validation, e.g.:
 
     ```py
     from pydantic_core import SchemaValidator, core_schema
@@ -2271,21 +2283,63 @@ def with_info_plain_validator_function(
         assert 'hello' in v
         return v + 'world'
 
-    schema = core_schema.with_info_plain_validator_function(function=fn)
+    schema = core_schema.general_plain_validator_function(function=fn)
     v = SchemaValidator(schema)
     assert v.validate_python('hello ') == 'hello world'
     ```
 
     Args:
         function: The validator function to call
-        field_name: The name of the field this validators is applied to, if any
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         serialization: Custom serialization schema
     """
     return _dict_not_none(
         type='function-plain',
-        function=_dict_not_none(type='with-info', function=function, field_name=field_name),
+        function={'type': 'general', 'function': function},
+        ref=ref,
+        metadata=metadata,
+        serialization=serialization,
+    )
+
+
+def field_plain_validator_function(
+    function: FieldValidatorFunction,
+    field_name: str,
+    *,
+    ref: str | None = None,
+    metadata: Any = None,
+    serialization: SerSchema | None = None,
+) -> PlainValidatorFunctionSchema:
+    """
+    Returns a schema that uses the provided function for validation, e.g.:
+
+    ```py
+    from typing import Any
+    from pydantic_core import SchemaValidator, core_schema
+
+    def fn(v: Any, info: core_schema.FieldValidationInfo) -> str:
+        assert info.data is not None
+        assert info.field_name is not None
+        return str(v) + 'world'
+
+    func_schema = core_schema.field_plain_validator_function(function=fn, field_name='a')
+    schema = core_schema.typed_dict_schema({'a': core_schema.typed_dict_field(func_schema)})
+
+    v = SchemaValidator(schema)
+    assert v.validate_python({'a': 'hello '}) == {'a': 'hello world'}
+    ```
+
+    Args:
+        function: The validator function to call
+        field_name: The name of the field
+        ref: optional unique identifier of the schema, used to reference the schema in other places
+        metadata: Any other information you want to include with the schema, not used by pydantic-core
+        serialization: Custom serialization schema
+    """
+    return _dict_not_none(
+        type='function-plain',
+        function={'type': 'field', 'function': function, 'field_name': field_name},
         ref=ref,
         metadata=metadata,
         serialization=serialization,
@@ -2482,8 +2536,8 @@ class TaggedUnionSchema(TypedDict, total=False):
 
 
 def tagged_union_schema(
-    choices: Dict[Any, CoreSchema],
-    discriminator: str | list[str | int] | list[list[str | int]] | Callable[[Any], Any],
+    choices: Dict[Hashable, CoreSchema],
+    discriminator: str | list[str | int] | list[list[str | int]] | Callable[[Any], Hashable],
     *,
     custom_error_type: str | None = None,
     custom_error_message: str | None = None,
@@ -2585,7 +2639,7 @@ def chain_schema(
         assert 'hello' in v
         return v + ' world'
 
-    fn_schema = core_schema.with_info_plain_validator_function(function=fn)
+    fn_schema = core_schema.general_plain_validator_function(function=fn)
     schema = core_schema.chain_schema(
         [fn_schema, fn_schema, fn_schema, core_schema.str_schema()]
     )
@@ -2775,7 +2829,7 @@ class TypedDictSchema(TypedDict, total=False):
     fields: Required[Dict[str, TypedDictField]]
     computed_fields: List[ComputedField]
     strict: bool
-    extras_schema: CoreSchema
+    extra_validator: CoreSchema
     # all these values can be set via config, equivalent fields have `typed_dict_` prefix
     extra_behavior: ExtraBehavior
     total: bool  # default: True
@@ -2791,7 +2845,7 @@ def typed_dict_schema(
     *,
     computed_fields: list[ComputedField] | None = None,
     strict: bool | None = None,
-    extras_schema: CoreSchema | None = None,
+    extra_validator: CoreSchema | None = None,
     extra_behavior: ExtraBehavior | None = None,
     total: bool | None = None,
     populate_by_name: bool | None = None,
@@ -2817,7 +2871,7 @@ def typed_dict_schema(
         fields: The fields to use for the typed dict
         computed_fields: Computed fields to use when serializing the model, only applies when directly inside a model
         strict: Whether the typed dict is strict
-        extras_schema: The extra validator to use for the typed dict
+        extra_validator: The extra validator to use for the typed dict
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         extra_behavior: The extra behavior to use for the typed dict
@@ -2830,7 +2884,7 @@ def typed_dict_schema(
         fields=fields,
         computed_fields=computed_fields,
         strict=strict,
-        extras_schema=extras_schema,
+        extra_validator=extra_validator,
         extra_behavior=extra_behavior,
         total=total,
         populate_by_name=populate_by_name,
@@ -2894,7 +2948,7 @@ class ModelFieldsSchema(TypedDict, total=False):
     model_name: str
     computed_fields: List[ComputedField]
     strict: bool
-    extras_schema: CoreSchema
+    extra_validator: CoreSchema
     # all these values can be set via config, equivalent fields have `typed_dict_` prefix
     extra_behavior: ExtraBehavior
     populate_by_name: bool  # replaces `allow_population_by_field_name` in pydantic v1
@@ -2910,7 +2964,7 @@ def model_fields_schema(
     model_name: str | None = None,
     computed_fields: list[ComputedField] | None = None,
     strict: bool | None = None,
-    extras_schema: CoreSchema | None = None,
+    extra_validator: CoreSchema | None = None,
     extra_behavior: ExtraBehavior | None = None,
     populate_by_name: bool | None = None,
     from_attributes: bool | None = None,
@@ -2937,7 +2991,7 @@ def model_fields_schema(
         model_name: The name of the model, used for error messages, defaults to "Model"
         computed_fields: Computed fields to use when serializing the model, only applies when directly inside a model
         strict: Whether the typed dict is strict
-        extras_schema: The extra validator to use for the typed dict
+        extra_validator: The extra validator to use for the typed dict
         ref: optional unique identifier of the schema, used to reference the schema in other places
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         extra_behavior: The extra behavior to use for the typed dict
@@ -2951,7 +3005,7 @@ def model_fields_schema(
         model_name=model_name,
         computed_fields=computed_fields,
         strict=strict,
-        extras_schema=extras_schema,
+        extra_validator=extra_validator,
         extra_behavior=extra_behavior,
         populate_by_name=populate_by_name,
         from_attributes=from_attributes,
@@ -3064,7 +3118,6 @@ class DataclassField(TypedDict, total=False):
     name: Required[str]
     schema: Required[CoreSchema]
     kw_only: bool  # default: True
-    init: bool  # default: True
     init_only: bool  # default: False
     frozen: bool  # default: False
     validation_alias: Union[str, List[Union[str, int]], List[List[Union[str, int]]]]
@@ -3078,7 +3131,6 @@ def dataclass_field(
     schema: CoreSchema,
     *,
     kw_only: bool | None = None,
-    init: bool | None = None,
     init_only: bool | None = None,
     validation_alias: str | list[str | int] | list[list[str | int]] | None = None,
     serialization_alias: str | None = None,
@@ -3104,7 +3156,6 @@ def dataclass_field(
         name: The name to use for the argument parameter
         schema: The schema to use for the argument parameter
         kw_only: Whether the field can be set with a positional argument as well as a keyword argument
-        init: Whether the field should be validated during initialization
         init_only: Whether the field should be omitted  from `__dict__` and passed to `__post_init__`
         validation_alias: The alias(es) to use to find the field in the validation data
         serialization_alias: The alias to use as a key when serializing
@@ -3117,7 +3168,6 @@ def dataclass_field(
         name=name,
         schema=schema,
         kw_only=kw_only,
-        init=init,
         init_only=init_only,
         validation_alias=validation_alias,
         serialization_alias=serialization_alias,
@@ -3704,13 +3754,12 @@ def definitions_schema(schema: CoreSchema, definitions: list[CoreSchema]) -> Def
 class DefinitionReferenceSchema(TypedDict, total=False):
     type: Required[Literal['definition-ref']]
     schema_ref: Required[str]
-    ref: str
     metadata: Any
     serialization: SerSchema
 
 
 def definition_reference_schema(
-    schema_ref: str, ref: str | None = None, metadata: Any = None, serialization: SerSchema | None = None
+    schema_ref: str, metadata: Any = None, serialization: SerSchema | None = None
 ) -> DefinitionReferenceSchema:
     """
     Returns a schema that points to a schema stored in "definitions", this is useful for nested recursive
@@ -3720,14 +3769,9 @@ def definition_reference_schema(
     from pydantic_core import SchemaValidator, core_schema
 
     schema_definition = core_schema.definition_reference_schema('list-schema')
-    schema = core_schema.definitions_schema(
-        schema=schema_definition,
-        definitions=[
-            core_schema.list_schema(items_schema=schema_definition, ref='list-schema'),
-        ],
-    )
+    schema = core_schema.list_schema(items_schema=schema_definition, ref='list-schema')
     v = SchemaValidator(schema)
-    assert v.validate_python([()]) == [[]]
+    assert v.validate_python([[]]) == [[]]
     ```
 
     Args:
@@ -3735,9 +3779,7 @@ def definition_reference_schema(
         metadata: Any other information you want to include with the schema, not used by pydantic-core
         serialization: Custom serialization schema
     """
-    return _dict_not_none(
-        type='definition-ref', schema_ref=schema_ref, ref=ref, metadata=metadata, serialization=serialization
-    )
+    return _dict_not_none(type='definition-ref', schema_ref=schema_ref, metadata=metadata, serialization=serialization)
 
 
 MYPY = False
@@ -3758,12 +3800,12 @@ if not MYPY:
         DatetimeSchema,
         TimedeltaSchema,
         LiteralSchema,
-        EnumSchema,
         IsInstanceSchema,
         IsSubclassSchema,
         CallableSchema,
         ListSchema,
-        TupleSchema,
+        TuplePositionalSchema,
+        TupleVariableSchema,
         SetSchema,
         FrozenSetSchema,
         GeneratorSchema,
@@ -3813,12 +3855,12 @@ CoreSchemaType = Literal[
     'datetime',
     'timedelta',
     'literal',
-    'enum',
     'is-instance',
     'is-subclass',
     'callable',
     'list',
-    'tuple',
+    'tuple-positional',
+    'tuple-variable',
     'set',
     'frozenset',
     'generator',
@@ -3918,7 +3960,6 @@ ErrorType = Literal[
     'datetime_type',
     'datetime_parsing',
     'datetime_object_invalid',
-    'datetime_from_date_parsing',
     'datetime_past',
     'datetime_future',
     'timezone_naive',
@@ -3957,105 +3998,3 @@ ErrorType = Literal[
 
 def _dict_not_none(**kwargs: Any) -> Any:
     return {k: v for k, v in kwargs.items() if v is not None}
-
-
-###############################################################################
-# All this stuff is deprecated by #980 and will be removed eventually
-# They're kept because some code external code will be using them
-
-
-@deprecated('`field_before_validator_function` is deprecated, use `with_info_before_validator_function` instead.')
-def field_before_validator_function(function: WithInfoValidatorFunction, field_name: str, schema: CoreSchema, **kwargs):
-    warnings.warn(
-        '`field_before_validator_function` is deprecated, use `with_info_before_validator_function` instead.',
-        DeprecationWarning,
-    )
-    return with_info_before_validator_function(function, schema, field_name=field_name, **kwargs)
-
-
-@deprecated('`general_before_validator_function` is deprecated, use `with_info_before_validator_function` instead.')
-def general_before_validator_function(*args, **kwargs):
-    warnings.warn(
-        '`general_before_validator_function` is deprecated, use `with_info_before_validator_function` instead.',
-        DeprecationWarning,
-    )
-    return with_info_before_validator_function(*args, **kwargs)
-
-
-@deprecated('`field_after_validator_function` is deprecated, use `with_info_after_validator_function` instead.')
-def field_after_validator_function(function: WithInfoValidatorFunction, field_name: str, schema: CoreSchema, **kwargs):
-    warnings.warn(
-        '`field_after_validator_function` is deprecated, use `with_info_after_validator_function` instead.',
-        DeprecationWarning,
-    )
-    return with_info_after_validator_function(function, schema, field_name=field_name, **kwargs)
-
-
-@deprecated('`general_after_validator_function` is deprecated, use `with_info_after_validator_function` instead.')
-def general_after_validator_function(*args, **kwargs):
-    warnings.warn(
-        '`general_after_validator_function` is deprecated, use `with_info_after_validator_function` instead.',
-        DeprecationWarning,
-    )
-    return with_info_after_validator_function(*args, **kwargs)
-
-
-@deprecated('`field_wrap_validator_function` is deprecated, use `with_info_wrap_validator_function` instead.')
-def field_wrap_validator_function(
-    function: WithInfoWrapValidatorFunction, field_name: str, schema: CoreSchema, **kwargs
-):
-    warnings.warn(
-        '`field_wrap_validator_function` is deprecated, use `with_info_wrap_validator_function` instead.',
-        DeprecationWarning,
-    )
-    return with_info_wrap_validator_function(function, schema, field_name=field_name, **kwargs)
-
-
-@deprecated('`general_wrap_validator_function` is deprecated, use `with_info_wrap_validator_function` instead.')
-def general_wrap_validator_function(*args, **kwargs):
-    warnings.warn(
-        '`general_wrap_validator_function` is deprecated, use `with_info_wrap_validator_function` instead.',
-        DeprecationWarning,
-    )
-    return with_info_wrap_validator_function(*args, **kwargs)
-
-
-@deprecated('`field_plain_validator_function` is deprecated, use `with_info_plain_validator_function` instead.')
-def field_plain_validator_function(function: WithInfoValidatorFunction, field_name: str, **kwargs):
-    warnings.warn(
-        '`field_plain_validator_function` is deprecated, use `with_info_plain_validator_function` instead.',
-        DeprecationWarning,
-    )
-    return with_info_plain_validator_function(function, field_name=field_name, **kwargs)
-
-
-@deprecated('`general_plain_validator_function` is deprecated, use `with_info_plain_validator_function` instead.')
-def general_plain_validator_function(*args, **kwargs):
-    warnings.warn(
-        '`general_plain_validator_function` is deprecated, use `with_info_plain_validator_function` instead.',
-        DeprecationWarning,
-    )
-    return with_info_plain_validator_function(*args, **kwargs)
-
-
-_deprecated_import_lookup = {
-    'FieldValidationInfo': ValidationInfo,
-    'FieldValidatorFunction': WithInfoValidatorFunction,
-    'GeneralValidatorFunction': WithInfoValidatorFunction,
-    'FieldWrapValidatorFunction': WithInfoWrapValidatorFunction,
-}
-
-if TYPE_CHECKING:
-    FieldValidationInfo = ValidationInfo
-
-
-def __getattr__(attr_name: str) -> object:
-    new_attr = _deprecated_import_lookup.get(attr_name)
-    if new_attr is None:
-        raise AttributeError(f"module 'pydantic_core' has no attribute '{attr_name}'")
-    else:
-        import warnings
-
-        msg = f'`{attr_name}` is deprecated, use `{new_attr.__name__}` instead.'
-        warnings.warn(msg, DeprecationWarning, stacklevel=1)
-        return new_attr
