@@ -22,6 +22,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             status_code=400
         )
     
+    
     # Query Salesforce
     try:
         result = sf.query(soql_query)
