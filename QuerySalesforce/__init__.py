@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Add the path to the locally installed packages
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), 'python_packages')))
+
 import logging
 import requests
 import openai  # or whichever package you are using
