@@ -1,11 +1,11 @@
-import openai
 import requests
 import logging
 
+# Set up basic logging
 logging.basicConfig(level=logging.INFO)
 
 def get_salesforce_token():
-    logging.info("Getting Salesforce token...")
+    logging.info("Starting Salesforce token retrieval...")
     try:
         url = "https://test.salesforce.com/services/oauth2/token"
         payload = {
@@ -16,9 +16,10 @@ def get_salesforce_token():
         'password': 'Chatgptrules99'
         }
         response = requests.post(url, data=payload)
-        response.raise_for_status()
-        logging.info("Salesforce token obtained successfully.")
-        return response.json()['access_token']
+        response.raise_for_status()  # Raises an error for HTTP codes 4xx/5xx
+        token = response.json().get('access_token')
+        logging.info("Salesforce token retrieved successfully.")
+        return token
     except requests.exceptions.RequestException as e:
         logging.error(f"Error obtaining Salesforce token: {e}")
         raise
@@ -31,29 +32,14 @@ def query_salesforce(query):
             'Authorization': f'Bearer {token}',
             'Content-Type': 'application/json'
         }
+        logging.info("Headers created successfully.")
         query_url = f"https://collegelacite--devphil.sandbox.lightning.force.com/services/data/v60.0/query/?q={query}"
         response = requests.get(query_url, headers=headers)
-        response.raise_for_status()
+        response.raise_for_status()  # Raises an error for HTTP codes 4xx/5xx
         logging.info("Salesforce query executed successfully.")
         return response.json()
     except requests.exceptions.RequestException as e:
         logging.error(f"Error querying Salesforce: {e}")
-        raise
-
-def generate_openai_response(data):
-    logging.info("Generating OpenAI response...")
-    try:
-        openai.api_key = "<Your OpenAI API Key>"
-        prompt = f"Based on the following Salesforce data, answer the user's query: {data}"
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=100
-        )
-        logging.info("OpenAI response generated successfully.")
-        return response.choices[0].text.strip()
-    except Exception as e:
-        logging.error(f"Error generating OpenAI response: {e}")
         raise
 
 def main(query):
@@ -62,11 +48,8 @@ def main(query):
         # Step 1: Query Salesforce
         salesforce_data = query_salesforce(query)
         
-        # Step 2: Generate response using OpenAI
-        openai_response = generate_openai_response(salesforce_data)
-        
         logging.info("Function executed successfully.")
-        return openai_response
+        return {"data": salesforce_data}
     except Exception as e:
         logging.error(f"Error in main function: {e}")
         return {"error": str(e)}
