@@ -1,8 +1,7 @@
+import openai
 import requests
-from azure.ai.openai import OpenAIClient
 import logging
 
-# Set up basic logging
 logging.basicConfig(level=logging.INFO)
 
 def get_salesforce_token():
@@ -44,9 +43,13 @@ def query_salesforce(query):
 def generate_openai_response(data):
     logging.info("Generating OpenAI response...")
     try:
-        client = OpenAIClient("https://openai-poc-psej-us.openai.azure.com/", "02c7e86bcfdd4d46a0743819fdcb1d80")
+        openai.api_key = "<Your OpenAI API Key>"
         prompt = f"Based on the following Salesforce data, answer the user's query: {data}"
-        response = client.completions.create(engine="text-davinci-003", prompt=prompt)
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            max_tokens=100
+        )
         logging.info("OpenAI response generated successfully.")
         return response.choices[0].text.strip()
     except Exception as e:
@@ -59,7 +62,7 @@ def main(query):
         # Step 1: Query Salesforce
         salesforce_data = query_salesforce(query)
         
-        # Step 2: Generate response using Azure OpenAI
+        # Step 2: Generate response using OpenAI
         openai_response = generate_openai_response(salesforce_data)
         
         logging.info("Function executed successfully.")
