@@ -1,7 +1,12 @@
 import os
+import sys
+import logging
+
+# Add the local python_packages directory to the Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'python_packages'))
+
 import requests
 from azure.ai.openai import OpenAIClient
-import logging
 
 logging.basicConfig(level=logging.INFO)
 
