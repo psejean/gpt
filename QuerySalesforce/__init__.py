@@ -1,10 +1,18 @@
-import os
 import sys
+import os
 import logging
-import azure.functions as func
 
 # Add the local python_packages directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'python_packages'))
+print("Python Path:", sys.path)  # Debugging: Check Python Path
+
+try:
+    import pydantic
+    import pydantic_core
+    print("Successfully imported pydantic and pydantic_core")  # Debugging
+except Exception as e:
+    print("Error importing pydantic or pydantic_core:", e)  # Debugging
+    raise
 
 import requests
 import openai  # Replaced azure.ai.openai with openai
@@ -47,15 +55,15 @@ def query_salesforce(query):
 def generate_openai_response(data):
     logging.info("Generating response using OpenAI...")
     try:
-        openai.api_key = os.getenv('OPENAI_API_KEY')
+        openai.api_key = os.getenv("OPENAI_API_KEY")
         prompt = f"Based on the following Salesforce data, answer the user's query: {data}"
-        response = openai.Completion.create(engine="text-davinci-003", prompt=prompt, max_tokens=150)
+        response = openai.Completion.create(engine="text-davinci-003", prompt=prompt)
         return response.choices[0].text.strip()
     except Exception as e:
         logging.error(f"Error generating OpenAI response: {e}")
         raise
 
-def main(req: func.HttpRequest) -> func.HttpResponse:
+def main(req):
     try:
         # Example query to Salesforce
         query = req.get_json().get('query')
@@ -65,15 +73,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         openai_response = generate_openai_response(salesforce_data)
         
         logging.info("Function executed successfully.")
-        return func.HttpResponse(
-            body=f'{{"status": "success", "data": "{openai_response}"}}',
-            mimetype="application/json",
-            status_code=200
-        )
+        return {
+            "status": "success",
+            "data": openai_response
+        }
     except Exception as e:
         logging.error(f"Error in main function: {e}")
-        return func.HttpResponse(
-            body=f'{{"status": "error", "message": "{str(e)}"}}',
-            mimetype="application/json",
-            status_code=500
-        )
+        return {"status": "error", "message": str(e)}
